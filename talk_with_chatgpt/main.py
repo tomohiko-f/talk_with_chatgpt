@@ -1,4 +1,5 @@
 import re
+import wave
 from dotenv import load_dotenv
 import os
 
@@ -7,12 +8,46 @@ import speech_recognition as sr
 import openai
 from pydub import AudioSegment
 from pydub.playback import play
+import pyaudio
+
+
+def record_audio(seconds):
+    CHUNK = 4096
+    FORMAT = pyaudio.paInt16
+    CHANNELS = 1
+    RATE = 44100
+    RECORD_SECONDS = seconds
+    WAVE_OUTPUT_FILENAME = "output.wav"
+
+    audio = pyaudio.PyAudio()
+
+    stream = audio.open(
+        format=FORMAT, channels=CHANNELS, rate=RATE, input=True, frames_per_buffer=CHUNK
+    )
+    print("レコーディング中...")
+    frames = []
+    for i in range(0, int(RATE / CHUNK * RECORD_SECONDS)):
+        data = stream.read(CHUNK)
+        frames.append(data)
+    print("レコーディング完了!")
+
+    stream.stop_stream()
+    stream.close()
+    audio.terminate()
+
+    wf = wave.open(WAVE_OUTPUT_FILENAME, "wb")
+    wf.setnchannels(CHANNELS)
+    wf.setsampwidth(audio.get_sample_size(FORMAT))
+    wf.setframerate(RATE)
+    wf.writeframes(b"".join(frames))
+    wf.close()
 
 
 def recognize_speech():
     r = sr.Recognizer()
     with sr.Microphone() as source:
-        r.pause_threshold = 5
+        # r.pause_threshold = 5
+        r.adjust_for_ambient_noise(source, duration=1)
         print("何か話してください...")
         audio = r.listen(source)
 
@@ -70,6 +105,9 @@ if __name__ == "__main__":
     messages.append(system_context)
 
     while True:
+        # 音声を録音
+        record_audio(5)
+
         # 音声をテキストに変換
         text = recognize_speech()
         print(f"You：{text}")
