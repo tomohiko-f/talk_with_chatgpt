@@ -11,13 +11,12 @@ from pydub.playback import play
 import pyaudio
 
 
-def record_audio(seconds):
+def record_audio(seconds, wave_file):
     CHUNK = 4096
     FORMAT = pyaudio.paInt16
     CHANNELS = 1
     RATE = 44100
     RECORD_SECONDS = seconds
-    WAVE_OUTPUT_FILENAME = "output.wav"
 
     audio = pyaudio.PyAudio()
 
@@ -35,7 +34,7 @@ def record_audio(seconds):
     stream.close()
     audio.terminate()
 
-    wf = wave.open(WAVE_OUTPUT_FILENAME, "wb")
+    wf = wave.open(wave_file, "wb")
     wf.setnchannels(CHANNELS)
     wf.setsampwidth(audio.get_sample_size(FORMAT))
     wf.setframerate(RATE)
@@ -43,13 +42,10 @@ def record_audio(seconds):
     wf.close()
 
 
-def recognize_speech():
+def recognize_speech(audio_file):
     r = sr.Recognizer()
-    with sr.Microphone() as source:
-        # r.pause_threshold = 5
-        r.adjust_for_ambient_noise(source, duration=1)
-        print("何か話してください...")
-        audio = r.listen(source)
+    with sr.AudioFile(audio_file) as source:
+        audio = r.record(source)
 
     try:
         text = r.recognize_google(audio, language="ja-JP")
@@ -79,18 +75,23 @@ def ask_gpt(text, messages):
     return answer
 
 
-def play_audio(text, file):
+def play_audio(text, wave_file):
     tts = gTTS(text, lang="ja")
-    tts.save(file)
-    audio = AudioSegment.from_file(file)
+    tts.save(wave_file)
+    audio = AudioSegment.from_file(wave_file)
     play(audio)
-    os.remove(file)
+
+
+def remove_files(files):
+    [os.remove(file) for file in files]
 
 
 if __name__ == "__main__":
+    INPUT_WAVE_FILE = "/var/tmp/input.wav"
+    OUTPUT_WAVE_FILE = "/var/tmp/output.wav"
+
     load_dotenv("../.env")
-    # 発話用の音声ファイル
-    audio_file = "/var/tmp/result.mp3"
+
     # .envにOPENAI_API_KEYを設定する
     openai.api_key = os.getenv("OPENAI_API_KEY")
 
@@ -106,10 +107,10 @@ if __name__ == "__main__":
 
     while True:
         # 音声を録音
-        record_audio(5)
+        record_audio(5, INPUT_WAVE_FILE)
 
         # 音声をテキストに変換
-        text = recognize_speech()
+        text = recognize_speech(INPUT_WAVE_FILE)
         print(f"You：{text}")
 
         if text:
@@ -118,10 +119,11 @@ if __name__ == "__main__":
             print(f"Genie：{answer}")
 
             # レスポンスを音声で発話
-            play_audio(answer, audio_file)
+            play_audio(answer, OUTPUT_WAVE_FILE)
 
             if answer.lower() == "終わりましょう":
                 messages.clear()
                 print(messages)
                 messages.append(system_content)
+                remove_files([INPUT_WAVE_FILE, OUTPUT_WAVE_FILE])
                 continue
