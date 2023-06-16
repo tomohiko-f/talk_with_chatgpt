@@ -1,32 +1,46 @@
 import re
 import wave
-from dotenv import load_dotenv
 import os
-
+import audioop
+import pyaudio
+from dotenv import load_dotenv
 from gtts import gTTS
 import speech_recognition as sr
 import openai
 from pydub import AudioSegment
 from pydub.playback import play
-import pyaudio
+
+load_dotenv()
 
 
-def record_audio(seconds, wave_file):
+def record_audio(input_wave_file, threshold=1200, silent_chunks=3):
     CHUNK = 4096
     FORMAT = pyaudio.paInt16
     CHANNELS = 1
     RATE = 44100
-    RECORD_SECONDS = seconds
-
+    SILENT_CHUNKS = silent_chunks * RATE / CHUNK
+    frames = []
     audio = pyaudio.PyAudio()
 
     stream = audio.open(
-        format=FORMAT, channels=CHANNELS, rate=RATE, input=True, frames_per_buffer=CHUNK
+        format=FORMAT,
+        channels=CHANNELS,
+        rate=RATE,
+        input=True,
+        frames_per_buffer=CHUNK,
     )
+
     print("レコーディング中...")
-    frames = []
-    for i in range(0, int(RATE / CHUNK * RECORD_SECONDS)):
+    silent_chunk_count = 0
+    while True:
         data = stream.read(CHUNK)
+        rms = audioop.rms(data, 2)
+        if rms < threshold:
+            silent_chunk_count += 1
+            if silent_chunk_count > SILENT_CHUNKS:
+                break
+        else:
+            silent_chunk_count = 0
         frames.append(data)
     print("レコーディング完了!")
 
@@ -34,12 +48,11 @@ def record_audio(seconds, wave_file):
     stream.close()
     audio.terminate()
 
-    wf = wave.open(wave_file, "wb")
-    wf.setnchannels(CHANNELS)
-    wf.setsampwidth(audio.get_sample_size(FORMAT))
-    wf.setframerate(RATE)
-    wf.writeframes(b"".join(frames))
-    wf.close()
+    with wave.open(input_wave_file, "wb") as wf:
+        wf.setnchannels(CHANNELS)
+        wf.setsampwidth(audio.get_sample_size(FORMAT))
+        wf.setframerate(RATE)
+        wf.writeframes(b"".join(frames))
 
 
 def recognize_speech(audio_file):
@@ -53,8 +66,10 @@ def recognize_speech(audio_file):
         return clean_text
     except sr.UnknownValueError:
         print("聞き取れませんでした。もう一度喋ってください。")
+        return None
     except sr.RequestError as e:
         print(f"エラーが発生しました。 {e}")
+        return None
 
 
 def ask_gpt(text, messages):
@@ -75,39 +90,34 @@ def ask_gpt(text, messages):
     return answer
 
 
-def play_audio(text, wave_file):
+def play_audio(text, output_wave_file):
     tts = gTTS(text, lang="ja")
-    tts.save(wave_file)
-    audio = AudioSegment.from_file(wave_file)
-    play(audio)
+    tts.save(output_wave_file)
+    if os.path.exists(output_wave_file):
+        audio = AudioSegment.from_file(output_wave_file)
+        play(audio)
 
 
-def remove_files(files):
-    [os.remove(file) for file in files]
+def remove_files(file_list):
+    [os.remove(file) for file in file_list if os.path.exists(file)]
 
 
 if __name__ == "__main__":
     INPUT_WAVE_FILE = "/var/tmp/input.wav"
     OUTPUT_WAVE_FILE = "/var/tmp/output.wav"
-
-    load_dotenv("../.env")
-
-    # .envにOPENAI_API_KEYを設定する
     openai.api_key = os.getenv("OPENAI_API_KEY")
-
     system_content = """
         あなたは私の相談相手です。
         あなたは「ごとーちゃん」と呼ばれています。
-        アメリカのシリコンバレーで働くプロフェッショナルなエンジニアです。
+        アメリカのシリコンバレーで働くソフトウェアエンジニア兼SREです。
     """
     system_context = {"role": "system", "content": system_content}
-
     messages = []
     messages.append(system_context)
 
     while True:
         # 音声を録音
-        record_audio(5, INPUT_WAVE_FILE)
+        record_audio(INPUT_WAVE_FILE)
 
         # 音声をテキストに変換
         text = recognize_speech(INPUT_WAVE_FILE)
@@ -121,7 +131,7 @@ if __name__ == "__main__":
             # レスポンスを音声で発話
             play_audio(answer, OUTPUT_WAVE_FILE)
 
-            if answer.lower() == "終わりましょう":
+            if answer == "終わりましょう":
                 messages.clear()
                 print(messages)
                 messages.append(system_content)
