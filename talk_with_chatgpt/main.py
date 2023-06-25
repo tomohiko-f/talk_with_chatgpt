@@ -13,11 +13,12 @@ from pydub.playback import play
 load_dotenv()
 
 
-def record_audio(input_wave_file, threshold=1200, silent_chunks=3):
+def record_audio(input_wave_file, silent_chunks=3):
     CHUNK = 4096
     FORMAT = pyaudio.paInt16
     CHANNELS = 1
     RATE = 44100
+    THRESHOLD = 50
     SILENT_CHUNKS = silent_chunks * RATE / CHUNK
     frames = []
     audio = pyaudio.PyAudio()
@@ -31,11 +32,12 @@ def record_audio(input_wave_file, threshold=1200, silent_chunks=3):
     )
 
     print("レコーディング中...")
+
     silent_chunk_count = 0
     while True:
         data = stream.read(CHUNK)
         rms = audioop.rms(data, 2)
-        if rms < threshold:
+        if rms < THRESHOLD:
             silent_chunk_count += 1
             if silent_chunk_count > SILENT_CHUNKS:
                 break
