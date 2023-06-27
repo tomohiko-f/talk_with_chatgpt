@@ -9,6 +9,8 @@ import speech_recognition as sr
 import openai
 from pydub import AudioSegment
 from pydub.playback import play
+import numpy as np
+
 
 load_dotenv()
 
@@ -55,6 +57,25 @@ def record_audio(input_wave_file, silent_chunks=3):
         wf.setsampwidth(audio.get_sample_size(FORMAT))
         wf.setframerate(RATE)
         wf.writeframes(b"".join(frames))
+
+
+def play_beep_sound():
+    FREQUENCY = 220
+    FORMAT = pyaudio.paInt32
+    DURATION = 1.5
+    CHANNELS = 1
+    RATE = 44100
+    p = pyaudio.PyAudio()
+    stream = p.open(format=FORMAT, channels=CHANNELS, rate=RATE, output=True)
+
+    beep = (np.sin(2 * np.pi * np.arange(RATE * DURATION) * FREQUENCY / RATE)).astype(
+        np.float32
+    )
+
+    stream.write(beep)
+    stream.stop_stream()
+    stream.close()
+    p.terminate()
 
 
 def recognize_speech(audio_file):
@@ -118,6 +139,7 @@ if __name__ == "__main__":
     messages.append(system_context)
 
     while True:
+        play_beep_sound()
         # 音声を録音
         record_audio(INPUT_WAVE_FILE)
 
